@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.idea/
+*.db
+data/audio/*
+!data/audio/.gitkeep
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo

@@ -1,172 +1,227 @@
 # 1v1 虚拟角色聊天 Demo
 
-这是一个以 LangGraph 为核心聊天编排的 1v1 虚拟角色聊天 Demo。
+一个基于 **FastAPI + Vue 3 + LangGraph** 的 1v1 虚拟角色聊天 Demo。用户可以选择不同人设的虚拟角色进行对话；系统会结合对话上下文、关系值、情绪和场景决定角色的行为，并按条件生成图片消息和语音消息。
 
-当前第一版已经包含：
+> 本项目中的角色、头像、照片和剧情均为虚构内容。项目不接入支付、红包、转账或真实身份验证。
 
-- Python 3.12 + uv。
-- FastAPI + SQLAlchemy + SQLite。
-- LangGraph 主链：加载上下文 -> 行为决策 -> 场景判断 -> 回复生成 -> 图片判断 -> 语音判断/TTS -> 状态更新 -> 记忆提取。
-- Vue 3 + TypeScript + Vite 聊天页面。
-- 三个有独立人设的 Demo 角色。
-- 同一前端项目中的角色后台：结构化编辑、草稿校验、测试预览和发布。
-- 关系数值、情绪衰减、场景流转、长期记忆提取。
-- 本地图片消息和可选豆包双向流式 TTS 语音消息。
-- 没有配置 LLM 时仍可用确定性角色兜底完成演示。
+## 功能概览
 
-页面会持续显示“虚拟角色”标识。角色和茶叶剧情均为虚构，不代表现实个人或真实门店；Demo 不接入支付、红包、转账或真实身份验证。
+- 多虚拟角色聊天：苏禾、林晚、沈砚等 Demo 角色。
+- LangGraph 对话编排：上下文加载、行为决策、场景判断、回复生成、媒体判断、状态更新和记忆提取。
+- 关系与情绪：维护关系数值、情绪状态、场景状态和长期记忆。
+- 多模型模式：配置兼容 OpenAI Chat Completions 的 LLM，或使用内置确定性 fallback 完成演示。
+- 图片消息：根据角色行为和场景条件发送角色照片。
+- 语音消息：支持豆包双向流式 TTS，也支持 OpenAI Compatible `/audio/speech`。
+- 角色后台：编辑草稿、校验配置、测试预览和发布角色配置。
+- SQLite 持久化：保存角色、会话、消息和记忆。
 
-## 1. 环境要求
+## 技术栈
 
-- Windows PowerShell。
-- Python 3.12。项目的 uv 配置限制为 >=3.12,<3.13。
-- uv。
+| 层次 | 技术 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite |
+| 后端 | Python 3.12、FastAPI、Uvicorn |
+| AI 编排 | LangGraph、LangChain、Pydantic 结构化输出 |
+| 数据访问 | SQLAlchemy Async、aiosqlite、SQLite |
+| 语音 | WebSocket 豆包双向 TTS / OpenAI Compatible TTS |
+| 工程工具 | uv、Ruff、Pytest、Vue TSC |
+
+## 系统架构
+
+```text
+Vue 3 + Vite 前端
+        │ HTTP/JSON
+        ▼
+FastAPI API 层
+        ▼
+ChatService / CharacterAdminService
+        ▼
+LangGraph 对话编排
+        ├── 上下文、行为、场景和回复节点
+        ├── 图片判断与素材服务
+        ├── 语音判断与 TTS 服务
+        └── 状态更新与长期记忆提取
+        ▼
+Domain 规则 + Repository
+        ▼
+SQLAlchemy Async + SQLite
+```
+
+### 后端分层
+
+- `app/api`：HTTP 路由、请求参数和响应 Schema。
+- `app/services`：聊天、角色后台、LLM 配置、提示词、素材和 TTS 等应用服务。
+- `app/graph`：LangGraph 状态定义、Graph 构建、运行时依赖和节点处理器。
+- `app/domain`：关系值、情绪衰减、场景和照片策略等领域规则。
+- `app/db`：SQLAlchemy 模型、异步 Session 和 Repository 数据访问。
+- `app/static`：角色头像和照片等本地静态素材。
+
+### 一轮消息的数据流
+
+```text
+用户消息
+  -> POST /api/conversations/{id}/messages
+  -> ChatService 加载会话、角色和历史记忆
+  -> LangGraph 执行行为决策与回复生成
+  -> 按条件追加图片、生成 TTS 音频
+  -> 更新关系 / 情绪 / 场景 / 长期记忆
+  -> 保存消息并返回前端
+```
+
+## LangGraph 执行流程
+
+`app/graph/builder.py` 构建的主图如下：
+
+```text
+START
+  -> load_context
+  -> behavior_decision
+  -> prepare_normal / prepare_avoid / prepare_advance / prepare_photo
+  -> scene_judgment
+  -> reply_generation
+  -> image_judgment
+  -> [可选] append_image_message
+  -> voice_judgment
+  -> [可选] tts_generation
+  -> state_update
+  -> memory_extraction
+  -> END
+```
+
+行为决策、图片判断和语音判断分别控制条件分支。模型不可用或结构化输出异常时，系统会在有限重试后回退到确定性角色逻辑；图片或 TTS 失败不会丢失本轮文字回复。
+
+## 项目结构
+
+```text
+.
+├── app/
+│   ├── api/                  # FastAPI 路由和 API Schema
+│   ├── db/                   # 数据库模型、Session、Repository
+│   ├── domain/               # 关系、情绪、场景和媒体策略
+│   ├── graph/                # LangGraph 状态、节点和 Graph 构建
+│   ├── services/             # 聊天、LLM、TTS、角色后台等服务
+│   ├── static/characters/    # 角色头像和照片
+│   ├── config.py             # 环境变量配置
+│   ├── main.py               # FastAPI 应用入口
+│   └── seed.py               # Demo 角色初始化
+├── data/
+│   └── characters.seed.json  # 首次初始化的角色数据
+├── frontend/
+│   ├── src/api/              # 前端 API 客户端
+│   ├── src/components/       # 聊天和角色后台组件
+│   ├── src/types/            # TypeScript 类型
+│   └── src/App.vue           # 前端应用入口
+├── tests/                    # Python 单元测试
+├── pyproject.toml            # Python 和 uv 配置
+├── uv.lock                   # Python 依赖锁定文件
+└── README.md
+```
+
+`docs/` 是本地设计资料目录，已加入 `.gitignore`，不会提交到 Git 仓库。
+
+## 环境要求
+
+- Windows PowerShell（其他系统也可运行，但命令需要相应调整）。
+- Python 3.12，项目约束为 `>=3.12,<3.13`。
+- [uv](https://docs.astral.sh/uv/)。
 - Node.js 18+ 和 npm。
 
-## 2. 安装 Python 依赖
+## 快速开始
 
-在项目根目录执行：
+### 1. 安装后端依赖并创建配置
 
-~~~powershell
+```powershell
 uv venv --python 3.12
 uv sync --dev
 Copy-Item .env.example .env
-~~~
+```
 
-如果当前机器没有 Python 3.12，uv 会按项目约束准备对应解释器。
+不配置 LLM 时，项目仍可使用 fallback 模式启动并体验页面、SQLite、Graph 分支和状态变化。
 
-## 3. 配置 LLM
+### 2. 配置 LLM（可选）
 
-编辑 .env：
+编辑 `.env`：
 
-~~~text
+```text
 LLM_ENABLED=true
 OPENAI_BASE_URL=https://your-compatible-endpoint/v1
 OPENAI_API_KEY=your-key
 OPENAI_MODEL=your-chat-model
-~~~
+```
 
-兼容接口需要支持 Chat Completions 和 LangChain 的结构化输出/工具调用格式。没有配置时，将使用代码中的 Demo fallback；这可以用于先验收页面、SQLite、Graph 分支和状态变化。
+兼容接口需要支持 Chat Completions，以及 LangChain 所需的结构化输出和工具调用格式。
 
-## 4. 配置 TTS
+### 3. 配置 TTS（可选）
 
-TTS 默认使用你在 YQ `StudentMockInterview` V2 链路中使用的豆包双向流式接口：
+豆包双向流式 TTS 示例：
 
-接口参考：[你提供的豆包语音文档](https://docs.volcengine.com/docs/6561/1719100?lang=zh)；当前 V3 双向接口的 [官方 API 参考](https://www.volcengine.com/docs/6561/2532486?lang=zh)。
-
-~~~text
+```text
 TTS_ENABLED=true
 TTS_PROVIDER=doubao_bidirection
 DOUBAO_BIDIRECTION_TTS_WEBSOCKET_URL=wss://openspeech.bytedance.com/api/v3/tts/bidirection
 DOUBAO_BIDIRECTION_TTS_API_KEY=your-api-key
 DOUBAO_BIDIRECTION_TTS_APP_ID=your-app-id
 DOUBAO_BIDIRECTION_TTS_RESOURCE_ID=seed-tts-2.0
-DOUBAO_BIDIRECTION_TTS_SPEAKER=zh_female_shuangkuaisisi_uranus_bigtts
-DOUBAO_BIDIRECTION_TTS_OUTPUT_FORMAT=pcm
-DOUBAO_BIDIRECTION_TTS_OUTPUT_SAMPLE_RATE=24000
-DOUBAO_BIDIRECTION_TTS_CONNECT_TIMEOUT_SECONDS=10
-TTS_MAX_CHARS=180
-TTS_TIMEOUT_SECONDS=20
-~~~
+DOUBAO_BIDIRECTION_TTS_SPEAKER=your-speaker-id
+```
 
-调用流程是：建立 WebSocket -> 发送连接开始事件 -> 创建会话 -> 提交短文本 -> 接收 PCM 音频块 -> 结束会话。PCM 会在 `data/audio/{conversation_id}` 下封装成 WAV，前端可以直接点击播放。角色卡里的 `fictional-*` 音色标签会安全地回退到 `DOUBAO_BIDIRECTION_TTS_SPEAKER`；如果要使用其他已开通的豆包音色，可直接把真实音色 ID 写进角色的 `voice_policy.voice_id`。
+如果 TTS 未配置或调用失败，本轮文字消息仍会正常返回。生成的 PCM 会封装为 WAV，保存到 `data/audio/`。
 
-如果要继续使用 OpenAI Compatible `POST /audio/speech`，设置 `TTS_PROVIDER=openai_compatible`，并补充 `TTS_BASE_URL`、`TTS_API_KEY`、`TTS_MODEL`、`TTS_FORMAT`。无论哪种供应商未配置或调用失败，本轮文字回复都会保留，不会让聊天请求失败。
+### 4. 初始化并启动后端
 
-第一版只使用合成音色或已授权的虚构音色，不支持现实人物声音克隆；浏览器不会自动播放语音。
-
-## 5. 初始化和启动
-
-初始化 SQLite 和 Demo 角色：
-
-~~~powershell
+```powershell
 uv run python -m app.seed
-~~~
-
-启动 FastAPI：
-
-~~~powershell
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-~~~
+```
 
-另开一个 PowerShell 窗口启动前端：
+### 5. 启动前端
 
-~~~powershell
+在另一个 PowerShell 窗口执行：
+
+```powershell
 Set-Location frontend
 npm install
 npm run dev
-~~~
+```
 
-如果本机 8000 端口被其他服务占用，可以临时设置 `VITE_API_TARGET=http://127.0.0.1:8001`，再执行 `npm run dev` 将前端代理切到其他后端端口。
+打开 [http://localhost:5173](http://localhost:5173)。后端健康检查地址为 [http://127.0.0.1:8000/healthz](http://127.0.0.1:8000/healthz)。
 
-浏览器打开：
+## API 概览
 
-~~~text
-http://localhost:5173
-~~~
-
-后端健康检查：
-
-~~~text
-http://127.0.0.1:8000/healthz
-~~~
-
-## 6. 主要接口
-
-~~~text
+```text
+GET  /healthz
 GET  /api/characters
 POST /api/conversations
 GET  /api/conversations/{id}/messages?user_id=...
 POST /api/conversations/{id}/messages
-~~~
+```
 
-角色后台默认地址为 `http://localhost:5173/#/admin/characters`，也可以从聊天页左侧的“打开角色后台”进入。后台在 `APP_ENV=dev` 且 `ADMIN_TOKEN` 为空时允许本地访问；非开发环境请设置 `ADMIN_TOKEN`，请求使用 `X-Admin-Token` 请求头。
+角色后台默认地址为 `http://localhost:5173/#/admin/characters`。开发环境且 `ADMIN_TOKEN` 为空时允许本地访问；非开发环境请配置 `ADMIN_TOKEN`，并通过 `X-Admin-Token` 请求头鉴权。
 
-角色配置保存在 `characters` 表：`profile_json` 是已发布配置，`draft_profile_json` 是草稿；角色编码、名称和头像也分别保存正式值与草稿值。已发布角色保存草稿后仍继续出现在聊天端，发布时才会一次性替换全部正式配置。`data/characters.seed.json` 只负责首次创建苏禾、林晚和沈砚，应用启动时不会覆盖已经由后台修改的角色。
+角色配置使用草稿与正式配置分离的方式：保存草稿不会立即替换聊天端角色，只有发布操作才会一次性更新正式配置。
 
-浏览器首次打开时会在 localStorage 中生成 demo user_id，因此同一个浏览器刷新后可以继续已有角色会话。
+## 数据与媒体
 
-## 7. Graph 行为
+默认 SQLite 文件为 `data/chat.db`，核心数据表包括：
 
-app/graph/builder.py 构建的 Graph 有以下节点：
+- `characters`：角色正式配置和草稿配置。
+- `conversations`：用户与角色的会话、关系、情绪和场景状态。
+- `messages`：对话文本、图片和语音消息。
+- `memories`：从对话中提取的长期记忆。
 
-~~~text
-START
-  -> load_context
-  -> behavior_decision
-  -> conditional behavior route
-  -> scene_judgment
-  -> reply_generation
-  -> image_judgment
-  -> conditional image route
-  -> voice_judgment
-  -> conditional voice route
-  -> tts_generation
-  -> state_update
-  -> memory_extraction
-  -> END
-~~~
+角色图片位于 `app/static/characters/`，TTS 音频位于 `data/audio/`。数据库、环境变量、前端依赖和构建产物均已通过 `.gitignore` 排除。
 
-当图片或语音条件不满足时，分支会跳过对应媒体节点。行为决策和回复计划使用 Pydantic 结构化输出；模型不可用或输出异常时最多有限重试，之后使用角色 fallback。
+## 验证命令
 
-## 8. 数据和素材
-
-SQLite 文件默认是 data/chat.db，核心表只有：
-
-- characters
-- conversations
-- messages
-- memories
-
-关系、情绪和场景直接保存在 conversations 的 JSON 字段。角色头像和照片在 app/static/characters，TTS 生成的音频在 data/audio。
-
-## 9. 验证命令
-
-~~~powershell
+```powershell
 uv run ruff check app
 uv run pytest -q
 Set-Location frontend
 npm run build
-~~~
+```
 
-静态检查和单测不等于真实 LLM/TTS 供应商验收。配置真实兼容接口后，再通过页面验证模型回复、图片条件和语音播放。
+以上命令覆盖静态检查、Python 单元测试和前端构建；它们不替代真实 LLM/TTS 供应商、浏览器交互和部署环境验收。
+
+## 许可证
+
+当前仓库为演示项目，未单独声明开源许可证。如需公开分发，请根据实际使用的代码和素材补充许可证及第三方声明。

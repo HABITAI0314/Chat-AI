@@ -1,10 +1,10 @@
 from typing import Any, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
 
 class RelationshipDelta(StrictModel):
@@ -51,16 +51,37 @@ class BehaviorDecision(StrictModel):
 
 
 class TextReply(StrictModel):
-    content: str = Field(min_length=1, max_length=80)
-    delay_ms: int = Field(default=0, ge=0, le=3000)
-    tone: Literal["normal", "teasing", "guarded", "warm", "sales_script"] = "normal"
+    content: str = Field(min_length=1, max_length=200)
+    delay_ms: int = Field(default=0, ge=0, le=10000)
+    tone: str = "normal"
+
+    @field_validator("tone", mode="before")
+    @classmethod
+    def normalize_tone(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            return "normal"
+        v = v.strip().lower()
+        allowed = {"normal", "teasing", "guarded", "warm", "sales_script"}
+        return v if v in allowed else "normal"
 
 
 class ReplyPlan(StrictModel):
-    messages: list[TextReply] = Field(min_length=1, max_length=3)
-    photo_send_text: str = Field(default="好吧，给你看一张。", max_length=80)
-    photo_fallback_text: str = Field(default="", max_length=80)
-    voice_text: str = Field(default="", max_length=180)
+    messages: list[TextReply] = Field(min_length=1)
+    photo_send_text: str = Field(default="好吧，给你看一张。", max_length=200)
+    photo_fallback_text: str = Field(default="", max_length=200)
+    voice_text: str = Field(default="", max_length=300)
+
+    @field_validator("messages", mode="before")
+    @classmethod
+    def normalize_messages(cls, v: Any) -> list[Any]:
+        if isinstance(v, list):
+            cleaned = [item for item in v if item]
+            return cleaned[:3] if len(cleaned) > 3 else (cleaned or [{"content": "我在呢。"}])
+        elif isinstance(v, dict):
+            return [v]
+        elif isinstance(v, str) and v.strip():
+            return [{"content": v.strip()}]
+        return [{"content": "我在呢。"}]
 
 
 class ImageDecision(StrictModel):

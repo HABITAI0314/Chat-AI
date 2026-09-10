@@ -28,6 +28,7 @@ class LLMService:
             config.enabled
             and config.base_url
             and config.api_key
+            and config.model
         )
 
     async def invoke_structured(
@@ -49,12 +50,12 @@ class LLMService:
             "temperature": 0.85,
             "timeout": self.settings.llm_timeout_seconds,
             "max_retries": 0,
-            # Qwen thinking mode rejects the tool_choice=required value used by
-            # LangChain's function-calling structured output. This graph needs
-            # a strict schema more than hidden reasoning, so disable thinking
-            # for these calls.
-            "extra_body": {"enable_thinking": False},
         }
+
+        model_lower = config.model.lower()
+        base_url_lower = config.base_url.lower()
+        if any(keyword in model_lower for keyword in ("qwen", "qwq")) or "aliyuncs.com" in base_url_lower:
+            model_kwargs["extra_body"] = {"enable_thinking": False}
         model = ChatOpenAI(**model_kwargs)
         structured_model = model.with_structured_output(schema, method="function_calling")
         attempts = max(1, self.settings.llm_max_retries + 1)
@@ -73,11 +74,12 @@ class LLMService:
             except Exception as exc:
                 last_error = exc
                 logger.warning(
-                    "structured llm call failed purpose=%s attempt=%s/%s error=%s",
+                    "structured llm call failed purpose=%s attempt=%s/%s error=%s: %s",
                     purpose,
                     attempt,
                     attempts,
                     type(exc).__name__,
+                    exc,
                 )
                 if attempt < attempts:
                     await asyncio.sleep(0.3 if attempt == 1 else 0.8)

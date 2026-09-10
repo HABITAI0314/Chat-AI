@@ -242,6 +242,12 @@ def _fallback_reply_plan(state: ChatState) -> ReplyPlan:
         return ReplyPlan(messages=[TextReply(content=content, tone="guarded")])
     character_name = state.get("character", {}).get("name", "")
     background = str(profile.get("background", "")).strip()
+    if re.search(r"(你是ai|你是机器人|你是电脑|你是程序|你是不是真人|是真人吗|是不是ai)", text, re.IGNORECASE):
+        return ReplyPlan(
+            messages=[
+                TextReply(content="大白天说什么胡话呢，我看你才像机器人。", tone="teasing"),
+            ]
+        )
     if re.search(r"(你是谁|你叫什么|叫什么名字|怎么称呼你|做什么的)", text):
         identity = f"我叫{character_name}。" if character_name else "先叫我现在这个名字吧。"
         if background:
@@ -286,44 +292,6 @@ def _fallback_reply_plan(state: ChatState) -> ReplyPlan:
 async def reply_generation_node(runtime: GraphRuntime, state: ChatState) -> dict[str, Any]:
     profile = _profile(state)
     decision = _model_dict(state.get("behavior_decision"))
-    system_prompt = f"""
-你是虚构角色“{state.get("character", {}).get("name", "角色")}”。
-只生成这个角色在私聊中会发出的短消息，不要解释，不要总结，不要使用 Markdown。
-角色卡：{json.dumps(profile, ensure_ascii=False)}
-当前关系：{json.dumps(state.get("relationship", {}), ensure_ascii=False)}
-当前情绪：{json.dumps(state.get("emotion", {}), ensure_ascii=False)}
-当前场景：{json.dumps(state.get("scene", {}), ensure_ascii=False)}
-行为决策：{json.dumps(decision, ensure_ascii=False)}
-要求：
-- 先回应本轮用户真正说了什么，再考虑人设、情绪和剧情。答非所问是失败。
-- 用户问事实或身份，第一句直接回答；不要只汇报心情，也不要反问来逃避回答。
-- 用户只说“你好/在吗”，像刚加微信一样自然接话，可以报名字或问称呼；禁止回复“怎么突然想到问这个”。
-- 最多 3 个气泡，每个 1 到 80 个中文字符。允许不完整短句、语气词和自然停顿，但不要每句都反问。
-- 不要使用客服或心理咨询腔，例如“我在呢，慢慢说”“有什么可以帮你”“听起来你……”。
-- 不复述用户原话，不总结对话，不连续使用相同句式，不重复最近已经发过的回复。
-- 角色目标必须通过当前话题找到自然连接；宁可本轮不推进，也不要突然推销或强行切话题。
-- 不说“作为 AI”、模型、Prompt、数据库、程序等内部话术。
-- 不冒充现实中的真实个人，不索要真实转账、红包、验证码或敏感信息。
-- 用户问照片/语音时，不要谎称已经发送，分别由后续媒体节点决定。
-- 用户索要照片时，同时准备 photo_send_text 和 photo_fallback_text；后续节点会按最终照片策略选择。
-- 如果直接被问是否 AI 或是否真实人物，保持自然，但必须承认这是应用中的虚拟角色。
-
-合格示例：
-- 用户“你好” → “嗨，我是林晚。你怎么称呼？”
-- 用户“你是谁” → “林晚呀。平时守着一家小茶铺。”
-- 用户“刚下班，好累” → “这么晚才下班啊。” / “先缓一会儿，别急着回我。”
-不合格示例：
-- 用户“你是谁” → “今天心情不错，你呢？”
-- 用户“你好” → “你怎么突然想到问这个？”
-"""
-    user_prompt = f"""
-最近聊天：
-{_conversation_text(state)}
-长期记忆：
-{json.dumps(state.get("memories", []), ensure_ascii=False)}
-本轮用户消息：{state.get("user_message", "")}
-请生成自然、短促的私聊回复。
-"""
     values = {
         "character_name": state.get("character", {}).get("name", "角色"),
         "profile_json": json.dumps(profile, ensure_ascii=False),
@@ -551,18 +519,6 @@ def _fallback_memories(state: ChatState) -> list[dict[str, Any]]:
 
 
 async def memory_extraction_node(runtime: GraphRuntime, state: ChatState) -> dict[str, Any]:
-    system_prompt = """
-你负责从虚构角色聊天中提取少量长期记忆。
-只记录用户明确表达的偏好、经历、重要事件或边界。
-不要记录密码、验证码、支付信息、精确住址、身份证号或其他敏感信息。
-最多返回 2 条，短句即可；没有长期价值就返回空列表。
-"""
-    user_prompt = f"""
-用户消息：{state.get("user_message", "")}
-最近聊天：
-{_conversation_text(state)}
-请提取可长期使用的用户记忆。
-"""
     values = {
         "user_message": state.get("user_message", ""),
         "conversation_text": _conversation_text(state),

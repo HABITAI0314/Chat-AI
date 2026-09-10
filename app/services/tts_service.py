@@ -40,8 +40,8 @@ class DoubaoBidirectionalTTS:
         timeout = max(1.0, float(self.settings.tts_timeout_seconds))
         connect_timeout = max(1.0, float(self.settings.tts_connect_timeout_seconds))
         headers = {
-            "X-Api-Key": self.settings.tts_api_key,
-            "X-Api-App-Id": self.settings.tts_app_id,
+            "X-Api-App-Key": self.settings.tts_app_id,
+            "X-Api-Access-Key": self.settings.tts_api_key,
             "X-Api-Resource-Id": self.settings.tts_resource_id,
             "X-Api-Connect-Id": connect_id,
         }
@@ -136,8 +136,8 @@ class DoubaoBidirectionalTTS:
         except (DoubaoProtocolError, UnicodeError, json.JSONDecodeError) as exc:
             raise TTSUnavailableError("doubao_tts_protocol_error") from exc
         except Exception as exc:
-            # 不把服务商返回体、鉴权信息或 URL 写入用户可见错误。
-            raise TTSUnavailableError("doubao_tts_request_failed") from exc
+            # 不把鉴权信息写入用户可见错误，但保留异常原因便于服务端排查。
+            raise TTSUnavailableError(f"doubao_tts_request_failed: {exc}") from exc
 
         audio = b"".join(audio_chunks)
         if not audio:
@@ -272,11 +272,12 @@ class TTSService:
             except Exception as exc:
                 last_error = exc
             logger.warning(
-                "tts request failed attempt=%s/%s provider=%s error=%s",
+                "tts request failed attempt=%s/%s provider=%s error=%s: %s",
                 attempt,
                 max_retries,
                 self.provider,
                 type(last_error).__name__ if last_error else "unknown",
+                last_error,
             )
             if attempt < max_retries:
                 await asyncio.sleep(0.3)

@@ -1,9 +1,13 @@
 import json
+import logging
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 from app.config import ROOT_DIR, settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -109,6 +113,8 @@ class TTSRuntimeConfig:
 class LLMConfigService:
     def __init__(self, path: Path | None = None):
         self.path = path or ROOT_DIR / "data" / "llm-config.json"
+        self._cached_mtime: int | None = None
+        self._cached_config: LLMRuntimeConfig | None = None
 
     def runtime_config(self) -> LLMRuntimeConfig:
         fallback = LLMRuntimeConfig(
@@ -120,14 +126,21 @@ class LLMConfigService:
         if not self.path.exists():
             return fallback
         try:
+            mtime = self.path.stat().st_mtime_ns
+            if self._cached_mtime == mtime and self._cached_config is not None:
+                return self._cached_config
             payload = json.loads(self.path.read_text(encoding="utf-8"))
-            return LLMRuntimeConfig(
+            config = LLMRuntimeConfig(
                 enabled=bool(payload.get("enabled", fallback.enabled)),
                 base_url=str(payload.get("base_url", fallback.base_url)).strip().rstrip("/"),
                 api_key=str(payload.get("api_key", fallback.api_key)).strip(),
                 model=str(payload.get("model", fallback.model)).strip(),
             )
-        except (OSError, ValueError, TypeError):
+            self._cached_mtime = mtime
+            self._cached_config = config
+            return config
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("failed to load LLM config file; using fallback: %s", exc)
             return fallback
 
     def public_config(self) -> dict[str, object]:
@@ -174,12 +187,27 @@ class LLMConfigService:
             model=model,
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._cached_config = config
+        content = json.dumps(asdict(config), ensure_ascii=False, indent=2)
         temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(asdict(config), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        temporary.replace(self.path)
+        temporary.write_text(content, encoding="utf-8")
+        try:
+            temporary.replace(self.path)
+        except OSError:
+            time.sleep(0.05)
+            try:
+                temporary.replace(self.path)
+            except OSError:
+                self.path.write_text(content, encoding="utf-8")
+                if temporary.exists():
+                    try:
+                        temporary.unlink()
+                    except OSError:
+                        pass
+        try:
+            self._cached_mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            self._cached_mtime = None
         return self.public_config()
 
 
@@ -189,6 +217,8 @@ llm_config_service = LLMConfigService()
 class TTSConfigService:
     def __init__(self, path: Path | None = None):
         self.path = path or ROOT_DIR / "data" / "tts-config.json"
+        self._cached_mtime: int | None = None
+        self._cached_config: TTSRuntimeConfig | None = None
 
     @staticmethod
     def _fallback() -> TTSRuntimeConfig:
@@ -216,11 +246,18 @@ class TTSConfigService:
         if not self.path.exists():
             return fallback
         try:
+            mtime = self.path.stat().st_mtime_ns
+            if self._cached_mtime == mtime and self._cached_config is not None:
+                return self._cached_config
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             values = asdict(fallback)
             values.update({key: value for key, value in payload.items() if key in values})
-            return TTSRuntimeConfig(**values)
-        except (OSError, ValueError, TypeError):
+            config = TTSRuntimeConfig(**values)
+            self._cached_mtime = mtime
+            self._cached_config = config
+            return config
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("failed to load TTS config file; using fallback: %s", exc)
             return fallback
 
     def public_config(self) -> dict[str, object]:
@@ -284,12 +321,27 @@ class TTSConfigService:
                 raise ValueError("tts_model_and_voice_required")
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._cached_config = config
+        content = json.dumps(asdict(config), ensure_ascii=False, indent=2)
         temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(asdict(config), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        temporary.replace(self.path)
+        temporary.write_text(content, encoding="utf-8")
+        try:
+            temporary.replace(self.path)
+        except OSError:
+            time.sleep(0.05)
+            try:
+                temporary.replace(self.path)
+            except OSError:
+                self.path.write_text(content, encoding="utf-8")
+                if temporary.exists():
+                    try:
+                        temporary.unlink()
+                    except OSError:
+                        pass
+        try:
+            self._cached_mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            self._cached_mtime = None
         return self.public_config()
 
 

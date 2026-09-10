@@ -12,6 +12,14 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _format_datetime(dt: datetime | None) -> str:
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
+
+
 def _defaults(profile: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     defaults = profile.get("defaults", {})
     relationship = {
@@ -245,7 +253,7 @@ class Repository:
                         "image_path": item.image_path,
                         "audio_path": item.audio_path,
                         "metadata": item.metadata_json or {},
-                        "created_at": item.created_at.isoformat(),
+                        "created_at": _format_datetime(item.created_at),
                     }
                     for item in reversed(messages)
                 ],
@@ -440,7 +448,7 @@ class Repository:
             "audio_url": message.audio_path,
             "audio_duration_ms": message.audio_duration_ms,
             "metadata": metadata,
-            "created_at": message.created_at.isoformat(),
+            "created_at": _format_datetime(message.created_at),
         }
         if metadata.get("transcript"):
             result["transcript"] = metadata["transcript"]
@@ -453,5 +461,5 @@ class Repository:
             "memory_type": memory.memory_type,
             "content": memory.content,
             "importance": memory.importance,
-            "created_at": memory.created_at.isoformat(),
+            "created_at": _format_datetime(memory.created_at),
         }

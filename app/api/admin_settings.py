@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.api.admin_characters import require_admin
 from app.api.schemas import (
@@ -10,7 +10,6 @@ from app.api.schemas import (
     TTSConfigResponse,
 )
 from app.services.llm_config_service import llm_config_service, tts_config_service
-from app.services.prompt_config_service import prompt_config_service
 from app.services.prompt_config_service import prompt_config_service
 
 router = APIRouter(
@@ -72,36 +71,9 @@ async def create_prompt_version(payload: PromptVersionCreateRequest):
 
 
 @router.put("/prompts/versions/{version}/activate", response_model=PromptConfigResponse)
-async def activate_prompt_version(version: int):
+async def activate_prompt_version(version: int = Path(..., ge=1)):
     try:
         return prompt_config_service.activate(version)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-
-@router.get("/prompts", response_model=PromptConfigResponse)
-async def get_prompts(version: int | None = None):
-    try:
-        return prompt_config_service.public_state(version)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/prompts/versions", response_model=PromptConfigResponse)
-async def create_prompt_version(payload: PromptVersionCreateRequest):
-    try:
-        return prompt_config_service.create_version(
-            payload.name,
-            payload.prompts.model_dump(),
-            payload.activate,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.put("/prompts/versions/{version}/activate", response_model=PromptConfigResponse)
-async def activate_prompt_version(version: int):
-    try:
-        return prompt_config_service.activate(version)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc

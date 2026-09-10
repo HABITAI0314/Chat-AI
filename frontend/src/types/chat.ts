@@ -7,7 +7,17 @@ export interface Character {
   is_virtual: boolean
 }
 
-export type MessageType = 'text' | 'image' | 'audio'
+export type MessageType = 'text' | 'image' | 'audio' | 'transfer'
+export type TransferStatus = 'pending' | 'accepted' | 'returned' | 'failed'
+
+export interface TransferMetadata {
+  event: 'simulated_transfer'
+  transfer_id: string
+  amount_cents: number
+  note: string
+  status: TransferStatus
+  reason?: string
+}
 
 export interface Message {
   id: number

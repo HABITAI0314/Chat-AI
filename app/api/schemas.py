@@ -193,6 +193,12 @@ class ChatRequest(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 
+class TransferRequest(BaseModel):
+    user_id: str = Field(default="demo-user", min_length=1, max_length=128)
+    amount_cents: int = Field(ge=1, le=100000)
+    note: str = Field(default="", max_length=80)
+
+
 class ChatStateResponse(BaseModel):
     relationship: dict[str, Any]
     emotion: dict[str, Any]

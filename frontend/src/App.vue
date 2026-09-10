@@ -4,6 +4,7 @@ import AdminWorkspace from './components/AdminWorkspace.vue'
 import CharacterList from './components/CharacterList.vue'
 import Composer from './components/Composer.vue'
 import MessageBubble from './components/MessageBubble.vue'
+import TransferDialog from './components/TransferDialog.vue'
 import TypingIndicator from './components/TypingIndicator.vue'
 import { api } from './api/chat'
 import { adminApi } from './api/admin'
@@ -69,7 +70,9 @@ const draft = ref('')
 const isTyping = ref(false)
 const isLoading = ref(true)
 const isSending = ref(false)
+const isTransferring = ref(false)
 const isResetting = ref(false)
+const showTransfer = ref(false)
 const showMemories = ref(false)
 const isLoadingMemories = ref(false)
 const memories = ref<ChatMemory[]>([])
@@ -89,6 +92,7 @@ const selectedScene = computed(() => {
 const loadConversation = async (character: Character) => {
   const requestId = ++loadRequestId
   selectedCharacter.value = character
+  showTransfer.value = false
   isLoading.value = true
   error.value = ''
   try {
@@ -194,6 +198,61 @@ const sendMessage = async () => {
     error.value = err instanceof Error ? err.message : '发送失败，请稍后再试'
   } finally {
     isTyping.value = false
+    isSending.value = false
+  }
+}
+
+const openTransferDialog = () => {
+  if (!conversation.value || isSending.value || isResetting.value) return
+  error.value = ''
+  showTransfer.value = true
+}
+
+const sendTransfer = async (amountCents: number, note: string) => {
+  if (!conversation.value || isSending.value || isResetting.value) return
+  const conversationId = conversation.value.id
+  const tempId = -Date.now()
+  const transferId = `local-${Date.now()}`
+  messages.value.push({
+    id: tempId,
+    role: 'user',
+    message_type: 'transfer',
+    content: `模拟转账 ¥${(amountCents / 100).toFixed(2)}`,
+    metadata: {
+      event: 'simulated_transfer',
+      transfer_id: transferId,
+      amount_cents: amountCents,
+      note,
+      status: 'pending',
+    },
+    created_at: new Date().toISOString(),
+  })
+  isSending.value = true
+  isTransferring.value = true
+  isTyping.value = true
+  error.value = ''
+  try {
+    const response = await api.transfer(conversationId, userId, amountCents, note)
+    if (conversation.value?.id !== conversationId) return
+    const optimisticIndex = messages.value.findIndex((message) => message.id === tempId)
+    if (optimisticIndex >= 0) messages.value.splice(optimisticIndex, 1, response.user_message)
+    conversation.value.relationship = response.state.relationship
+    conversation.value.emotion = response.state.emotion
+    conversation.value.scene = response.state.scene
+    showTransfer.value = false
+    for (const message of response.assistant_messages) {
+      await sleep(message.delay_ms || 0)
+      messages.value.push(message)
+    }
+  } catch (err) {
+    if (conversation.value?.id === conversationId) {
+      const optimisticIndex = messages.value.findIndex((message) => message.id === tempId)
+      if (optimisticIndex >= 0) messages.value.splice(optimisticIndex, 1)
+    }
+    error.value = err instanceof Error ? err.message : '转账失败，请稍后再试'
+  } finally {
+    isTyping.value = false
+    isTransferring.value = false
     isSending.value = false
   }
 }
@@ -363,9 +422,23 @@ watch(showAdmin, async (isAdmin) => {
       </div>
 
       <footer class="chat-footer">
-        <Composer v-model="draft" :disabled="isSending || isLoading" @send="sendMessage" />
+        <Composer
+          v-model="draft"
+          :disabled="isSending || isLoading || isResetting"
+          @send="sendMessage"
+          @transfer="openTransferDialog"
+        />
       </footer>
     </section>
+
+    <TransferDialog
+      v-if="showTransfer"
+      :character-name="selectedCharacter?.name"
+      :disabled="isLoading || isResetting"
+      :submitting="isTransferring"
+      @close="showTransfer = false"
+      @confirm="sendTransfer"
+    />
 
     <div v-if="showMemories" class="memory-backdrop" @click.self="showMemories = false">
       <section class="memory-panel" role="dialog" aria-modal="true" aria-label="长期记忆管理">

@@ -17,6 +17,7 @@ ALLOWED_SCENES = {"first_meet", "familiar", "daily", "plot"}
 ALLOWED_PHOTO_OUTCOMES = {"send", "delay", "decline"}
 ALLOWED_VOICE_MODES = {"never", "on_request", "occasional", "emotional"}
 ALLOWED_DISPLAY_MODES = {"text_and_audio", "audio_only"}
+ALLOWED_TRANSFER_MODES = {"accept", "return", "conditional"}
 
 
 class CharacterProfileValidationError(ValueError):
@@ -95,6 +96,38 @@ def validate_character_profile(profile: dict[str, Any]) -> list[dict[str, str]]:
         voice_id = str(voice_policy.get("voice_id", "")).strip()
         if "/" in voice_id or ".." in voice_id:
             issues.append(_issue("profile.voice_policy.voice_id", "音色 ID 不能包含路径字符"))
+
+    transfer_policy = profile.get("transfer_policy", {})
+    if not isinstance(transfer_policy, dict):
+        issues.append(_issue("profile.transfer_policy", "转账策略必须是对象"))
+    else:
+        if transfer_policy.get("mode", "conditional") not in ALLOWED_TRANSFER_MODES:
+            issues.append(_issue("profile.transfer_policy.mode", "不是支持的转账策略"))
+        for field in ("min_familiarity", "min_trust"):
+            if field in transfer_policy and not _number_in_range(transfer_policy[field]):
+                issues.append(
+                    _issue(
+                        f"profile.transfer_policy.{field}",
+                        "数值必须在 0 到 100 之间",
+                    )
+                )
+        max_amount = transfer_policy.get("max_accept_amount_cents", 20000)
+        if (
+            not isinstance(max_amount, int)
+            or isinstance(max_amount, bool)
+            or not 1 <= max_amount <= 100000
+        ):
+            issues.append(
+                _issue(
+                    "profile.transfer_policy.max_accept_amount_cents",
+                    "可接受金额上限必须在 1 到 100000 分之间",
+                )
+            )
+        for field in ("accept_reply", "return_reply"):
+            if len(str(transfer_policy.get(field, ""))) > 120:
+                issues.append(
+                    _issue(f"profile.transfer_policy.{field}", "转账回复不能超过 120 个字符")
+                )
 
     scene_rules = profile.get("scene_rules", {})
     if not isinstance(scene_rules, dict):

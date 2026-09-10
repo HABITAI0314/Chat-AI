@@ -7,6 +7,7 @@ defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: []
+  transfer: []
 }>()
 
 const onKeydown = (event: KeyboardEvent) => {
@@ -27,6 +28,16 @@ const onKeydown = (event: KeyboardEvent) => {
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
       @keydown="onKeydown"
     />
+    <button
+      class="transfer-button"
+      type="button"
+      :disabled="disabled"
+      title="发送模拟转账"
+      @click="emit('transfer')"
+    >
+      <span>＋</span>
+      <span>转账</span>
+    </button>
     <button class="send-button" type="button" :disabled="disabled || !modelValue.trim()" @click="emit('send')">
       <span>发送</span>
       <span>↗</span>

@@ -42,6 +42,22 @@ export const api = {
     )
   },
 
+  async transfer(
+    conversationId: number,
+    userId: string,
+    amountCents: number,
+    note: string,
+  ): Promise<ChatResponse> {
+    const url = '/api/conversations/' + conversationId + '/transfers'
+    return json<ChatResponse>(
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, amount_cents: amountCents, note }),
+      }),
+    )
+  },
+
   async resetConversation(conversationId: number, userId: string): Promise<Conversation> {
     const url = '/api/conversations/' + conversationId + '/messages?user_id=' + encodeURIComponent(userId)
     return json<Conversation>(await fetch(url, { method: 'DELETE' }))

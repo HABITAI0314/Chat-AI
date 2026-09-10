@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from app.api.schemas import (
+    ChatResponse,
     ConversationCreateRequest,
     ConversationResponse,
     HistoryResponse,
     MemoryResponse,
+    TransferRequest,
 )
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
@@ -26,6 +28,16 @@ async def open_conversation(payload: ConversationCreateRequest, request: Request
 async def get_messages(conversation_id: int, user_id: str, request: Request):
     try:
         return await request.app.state.chat_service.history(conversation_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{conversation_id}/transfers", response_model=ChatResponse)
+async def send_transfer(
+    conversation_id: int, payload: TransferRequest, request: Request
+):
+    try:
+        return await request.app.state.chat_service.send_transfer(conversation_id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

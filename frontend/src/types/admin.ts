@@ -28,6 +28,16 @@ export interface CharacterProfile {
     display_mode?: string
     [key: string]: unknown
   }
+  transfer_policy: {
+    enabled?: boolean
+    mode?: 'accept' | 'return' | 'conditional' | string
+    min_familiarity?: number
+    min_trust?: number
+    max_accept_amount_cents?: number
+    accept_reply?: string
+    return_reply?: string
+    [key: string]: unknown
+  }
   defaults: {
     familiarity?: number
     trust?: number
@@ -149,7 +159,7 @@ export interface PromptConfig {
 export interface PreviewMessage {
   id: number
   role: 'user' | 'assistant'
-  message_type: 'text' | 'image' | 'audio'
+  message_type: 'text' | 'image' | 'audio' | 'transfer'
   content: string | null
   image_url?: string | null
   audio_url?: string | null

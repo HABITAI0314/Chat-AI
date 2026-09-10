@@ -1,9 +1,17 @@
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
-from app.api.schemas import AdminPreviewRequest, CharacterSummary, ConversationResponse
+from app.api.schemas import (
+    AdminPreviewRequest,
+    CharacterSummary,
+    ConversationResponse,
+    TransferRequest,
+)
 from app.db.models import Character, Conversation
 from app.db.repositories import Repository
+from app.domain.relationship import apply_relationship_delta
+from app.domain.transfer import format_transfer_amount, resolve_transfer
 from app.graph.builder import build_graph
 from app.graph.runtime import GraphRuntime
 from app.services.asset_service import AssetResolver
@@ -110,6 +118,65 @@ class ChatService:
                 "relationship": patch["relationship"],
                 "emotion": patch["emotion"],
                 "scene": patch["scene"],
+            },
+        }
+
+    async def send_transfer(
+        self, conversation_id: int, payload: TransferRequest
+    ) -> dict[str, Any]:
+        bundle = await self.repository.load_context(conversation_id, payload.user_id)
+        character = bundle["character"]
+        relationship = dict(bundle["conversation"].relationship_state or {})
+        decision = resolve_transfer(
+            dict(character.profile_json or {}),
+            relationship,
+            payload.amount_cents,
+        )
+        amount = format_transfer_amount(payload.amount_cents)
+        transfer_metadata = {
+            "event": "simulated_transfer",
+            "transfer_id": f"tr_{uuid4().hex[:20]}",
+            "amount_cents": payload.amount_cents,
+            "note": payload.note.strip(),
+            "status": decision["status"],
+            "reason": decision["reason"],
+        }
+        relationship_patch = apply_relationship_delta(
+            relationship,
+            decision["relationship_delta"],
+        )
+        reply = decision["reply"].replace("{{amount}}", amount)
+        persisted = await self.repository.persist_turn(
+            conversation_id=conversation_id,
+            user_id=payload.user_id,
+            user_content=f"模拟转账 {amount}",
+            user_message_type="transfer",
+            user_metadata=transfer_metadata,
+            reply_messages=[
+                {
+                    "message_type": "text",
+                    "content": reply,
+                    "delay_ms": 420,
+                    "metadata": {
+                        "tone": "warm" if decision["status"] == "accepted" else "guarded",
+                        "transfer_status": decision["status"],
+                    },
+                }
+            ],
+            persistence_patch={
+                "relationship": relationship_patch,
+                "emotion": bundle["conversation"].emotion_state or {},
+                "scene": bundle["conversation"].scene_state or {},
+            },
+            memory_candidates=[],
+        )
+        return {
+            "user_message": persisted["user_message"],
+            "assistant_messages": persisted["assistant_messages"],
+            "state": {
+                "relationship": relationship_patch,
+                "emotion": bundle["conversation"].emotion_state or {},
+                "scene": bundle["conversation"].scene_state or {},
             },
         }
 

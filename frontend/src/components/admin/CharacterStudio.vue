@@ -14,6 +14,7 @@ const sections = [
   { id: 'identity', label: '身份与人设', hint: '角色是谁，以及怎样说话' },
   { id: 'state', label: '关系与剧情', hint: '初始关系、情绪和场景目标' },
   { id: 'media', label: '图片与语音', hint: '媒体发送条件和素材白名单' },
+  { id: 'transfer', label: '转账互动', hint: '虚拟金额的收取与退回规则' },
   { id: 'fallback', label: '兜底与安全', hint: '异常回复和固定安全边界' },
 ]
 
@@ -45,6 +46,13 @@ interface CharacterForm {
   voiceMode: string
   voiceId: string
   displayMode: string
+  transferEnabled: boolean
+  transferMode: string
+  transferMinFamiliarity: number
+  transferMinTrust: number
+  transferMaxAmount: number
+  transferAcceptReply: string
+  transferReturnReply: string
   fallbackPhoto: string
   fallbackPhotoSend: string
   fallbackVoice: string
@@ -80,6 +88,13 @@ const createEmptyForm = (): CharacterForm => ({
   voiceMode: 'on_request',
   voiceId: 'fictional-default',
   displayMode: 'text_and_audio',
+  transferEnabled: true,
+  transferMode: 'conditional',
+  transferMinFamiliarity: 0,
+  transferMinTrust: 0,
+  transferMaxAmount: 20000,
+  transferAcceptReply: '那我就先收下啦，谢谢你。',
+  transferReturnReply: '不用转给我，心意我知道了，钱退给你。',
   fallbackPhoto: '',
   fallbackPhotoSend: '好吧，给你看一张。',
   fallbackVoice: '',
@@ -134,6 +149,7 @@ const applyDetail = (item: AdminCharacterDetail) => {
   const defaults = profile.defaults || {}
   const photo = profile.photo_policy || {}
   const voice = profile.voice_policy || {}
+  const transfer = profile.transfer_policy || {}
   const fallback = profile.fallback_replies || {}
   Object.assign(form, {
     code: item.code,
@@ -163,6 +179,13 @@ const applyDetail = (item: AdminCharacterDetail) => {
     voiceMode: String(voice.mode || 'on_request'),
     voiceId: String(voice.voice_id || 'fictional-default'),
     displayMode: String(voice.display_mode || 'text_and_audio'),
+    transferEnabled: transfer.enabled !== false,
+    transferMode: String(transfer.mode || 'conditional'),
+    transferMinFamiliarity: readNumber(transfer.min_familiarity, 0),
+    transferMinTrust: readNumber(transfer.min_trust, 0),
+    transferMaxAmount: readNumber(transfer.max_accept_amount_cents, 20000),
+    transferAcceptReply: String(transfer.accept_reply || '那我就先收下啦，谢谢你。'),
+    transferReturnReply: String(transfer.return_reply || '不用转给我，心意我知道了，钱退给你。'),
     fallbackPhoto: String(fallback.photo || ''),
     fallbackPhotoSend: String(fallback.photo_send || '好吧，给你看一张。'),
     fallbackVoice: String(fallback.voice || ''),
@@ -222,6 +245,16 @@ const profileFromForm = (includeCurrent = true): CharacterProfile => {
       mode: form.voiceMode,
       voice_id: form.voiceId.trim(),
       display_mode: form.displayMode,
+    },
+    transfer_policy: {
+      ...(current.transfer_policy || {}),
+      enabled: form.transferEnabled,
+      mode: form.transferMode,
+      min_familiarity: form.transferMinFamiliarity,
+      min_trust: form.transferMinTrust,
+      max_accept_amount_cents: form.transferMaxAmount,
+      accept_reply: form.transferAcceptReply.trim(),
+      return_reply: form.transferReturnReply.trim(),
     },
     fallback_replies: {
       ...(current.fallback_replies || {}),
@@ -659,7 +692,41 @@ onMounted(() => {
               </div>
             </template>
 
-            <!-- 4. 兜底与安全 -->
+            <!-- 4. 转账互动 -->
+            <template v-else-if="activeSection === 'transfer'">
+              <div class="sub-heading">
+                <h4>模拟转账反应</h4>
+                <span>仅影响虚拟剧情，不连接真实支付</span>
+              </div>
+              <label class="checkbox-row">
+                <input v-model="form.transferEnabled" type="checkbox" />
+                <span>允许该角色参与模拟转账互动</span>
+              </label>
+              <div class="field-grid three-cols">
+                <label>默认处理方式
+                  <select v-model="form.transferMode">
+                    <option value="accept">直接收款</option>
+                    <option value="return">直接退回</option>
+                    <option value="conditional">按关系和金额判断</option>
+                  </select>
+                </label>
+                <label>最低熟悉度<input v-model.number="form.transferMinFamiliarity" type="number" min="0" max="100" /></label>
+                <label>最低信任值<input v-model.number="form.transferMinTrust" type="number" min="0" max="100" /></label>
+              </div>
+              <label>可接受金额上限（分）<small class="hint">例如 20000 表示 200.00 元；仅用于虚拟剧情</small>
+                <input v-model.number="form.transferMaxAmount" type="number" min="1" max="100000" />
+              </label>
+              <div class="field-grid two-cols">
+                <label>收款时的回复<textarea v-model="form.transferAcceptReply" rows="3" maxlength="120" placeholder="例如：那我就先收下啦，谢谢你。" /></label>
+                <label>退回时的回复<textarea v-model="form.transferReturnReply" rows="3" maxlength="120" placeholder="例如：不用转给我，心意我知道了。" /></label>
+              </div>
+              <div class="info-box alert">
+                <span class="icon">!</span>
+                <p>收款结果由后端按已发布配置和当前关系状态决定。大模型只负责润色回复，不会触发真实扣款或收款。</p>
+              </div>
+            </template>
+
+            <!-- 5. 兜底与安全 -->
             <template v-else-if="activeSection === 'fallback'">
               <div class="sub-heading">
                 <h4>本地确定性短回复（模型不可用或兜底触发时）</h4>

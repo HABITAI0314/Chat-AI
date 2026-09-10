@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { Message } from '../types/chat'
+import TransferBubble from './TransferBubble.vue'
 
 const props = defineProps<{
   message: Message
@@ -88,6 +89,9 @@ onUnmounted(() => {
       <div v-else-if="message.message_type === 'image'" class="image-bubble">
         <img :src="message.image_url || ''" alt="角色发送的图片" />
       </div>
+
+      <!-- 模拟转账卡片 -->
+      <TransferBubble v-else-if="message.message_type === 'transfer'" :message="message" />
 
       <!-- 微信风格语音条 -->
       <div v-else class="wechat-voice-container">

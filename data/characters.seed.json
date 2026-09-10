@@ -27,6 +27,15 @@
         "voice_id": "fictional-female-soft",
         "display_mode": "text_and_audio"
       },
+      "transfer_policy": {
+        "enabled": true,
+        "mode": "conditional",
+        "min_familiarity": 35,
+        "min_trust": 20,
+        "max_accept_amount_cents": 20000,
+        "accept_reply": "干嘛突然给我转钱……那我先收下？",
+        "return_reply": "不用转给我啦，心意我知道了，钱退给你。"
+      },
       "defaults": {
         "familiarity": 8,
         "trust": 5,
@@ -72,6 +81,13 @@
         "voice_id": "fictional-female-bright",
         "display_mode": "text_and_audio"
       },
+      "transfer_policy": {
+        "enabled": true,
+        "mode": "accept",
+        "max_accept_amount_cents": 20000,
+        "accept_reply": "哎呀，还真给我转啦，那我就先收下喽。",
+        "return_reply": "不用转这么多，心意收到了，钱退给你。"
+      },
       "defaults": {
         "familiarity": 12,
         "trust": 8,
@@ -116,6 +132,13 @@
         "mode": "on_request",
         "voice_id": "fictional-male-low",
         "display_mode": "audio_only"
+      },
+      "transfer_policy": {
+        "enabled": true,
+        "mode": "return",
+        "max_accept_amount_cents": 20000,
+        "accept_reply": "谢谢。",
+        "return_reply": "不用转给我，退回给你。"
       },
       "defaults": {
         "familiarity": 4,

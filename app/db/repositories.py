@@ -349,6 +349,8 @@ class Repository:
         reply_messages: list[dict[str, Any]],
         persistence_patch: dict[str, Any],
         memory_candidates: list[dict[str, Any]],
+        user_message_type: str = "text",
+        user_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         async with self.factory() as session:
             async with session.begin():
@@ -359,9 +361,9 @@ class Repository:
                 user_message = Message(
                     conversation_id=conversation_id,
                     role="user",
-                    message_type="text",
+                    message_type=user_message_type,
                     content=user_content,
-                    metadata_json={},
+                    metadata_json=user_metadata or {},
                 )
                 session.add(user_message)
                 await session.flush()
